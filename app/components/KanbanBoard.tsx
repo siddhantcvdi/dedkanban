@@ -553,6 +553,7 @@ export default function KanbanBoard() {
 
   function onColumnDrop(targetColId: string) {
     if (!dragging || dragging.colId === targetColId) {
+      setDragging(null);
       setDragOverColId(null);
       return;
     }
@@ -675,6 +676,10 @@ export default function KanbanBoard() {
         else onTaskDragEnd();
       }
     }
+    // Always reset drag state in case any path above missed it
+    setDragging(null);
+    setDragOverColId(null);
+    setDragOverTrash(false);
     touchRef.current = null;
   }
 
