@@ -29,7 +29,6 @@ export function TaskModal({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    textareaRef.current?.focus();
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);

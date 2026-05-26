@@ -18,7 +18,7 @@ export function TrashZone({
   return (
     <div
       data-trash="true"
-      className={`mx-2 mb-3 sm:mx-6 sm:mb-6 rounded-2xl border-2 border-dashed flex items-center justify-center gap-3 py-5 transition-all duration-200 ${
+      className={`mx-2 mt-2 mb-2 sm:mx-6 sm:mt-1 sm:mb-2 rounded-2xl border-2 border-dashed flex items-center justify-center gap-3 py-5 transition-all duration-200 ${
         dragging
           ? dragOverTrash
             ? "border-red-400 dark:border-red-500 bg-red-50 dark:bg-red-950/40 text-red-500 dark:text-red-400 scale-[1.01] shadow-lg"

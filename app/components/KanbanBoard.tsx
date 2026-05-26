@@ -307,7 +307,7 @@ export default function KanbanBoard() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F2F0E3] dark:bg-[#1f1f1f] transition-colors duration-300">
+    <div className="h-dvh flex flex-col bg-[#F2F0E3] dark:bg-[#1f1f1f] transition-colors duration-300">
       <KanbanHeader
         boards={boards}
         activeBoardId={activeBoardId}
@@ -323,7 +323,7 @@ export default function KanbanBoard() {
       />
 
       {/* Board canvas */}
-      <div ref={boardScrollRef} className="flex-1 overflow-x-auto no-scrollbar">
+      <div ref={boardScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden no-scrollbar">
         <div className="flex gap-3 px-2 pt-3 pb-6 sm:gap-4 sm:px-4 sm:pt-4 items-start min-w-max">
           {columns.map((col) => (
             <KanbanColumn

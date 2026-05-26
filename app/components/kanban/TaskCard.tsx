@@ -57,7 +57,7 @@ export function TaskCard({
         onTouchEnd={onTouchEnd}
         onClick={() => setModalOpen(true)}
         onContextMenu={onContextMenu}
-        style={{ touchAction: "none" }}
+        style={{ touchAction: isDragging || isHolding ? "none" : "pan-x pan-y" }}
         className={`group p-3 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
           isDragging
             ? "opacity-40 scale-95 bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a]"

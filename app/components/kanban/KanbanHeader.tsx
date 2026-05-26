@@ -125,17 +125,19 @@ export function KanbanHeader({
               ) : (
                 <span className="max-w-[120px] truncate">{b.name}</span>
               )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setBoardCtxMenu({ boardId: b.id, x: rect.left, y: rect.bottom + 4 });
-                }}
-                className="flex-shrink-0 p-0.5 -mr-1 rounded opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-all"
-                title="Options"
-              >
-                <DotsVerticalIcon size={12} />
-              </button>
+              {b.id !== TODAY_BOARD_ID && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setBoardCtxMenu({ boardId: b.id, x: rect.left, y: rect.bottom + 4 });
+                  }}
+                  className="flex-shrink-0 p-0.5 -mr-1 rounded opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-all"
+                  title="Options"
+                >
+                  <DotsVerticalIcon size={12} />
+                </button>
+              )}
             </div>
           ))}
 

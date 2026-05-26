@@ -141,7 +141,7 @@ export function KanbanColumn({
       <div className="mx-4 mb-2 h-px bg-[#D8D5C4] dark:bg-[#313131]" />
 
       {/* Tasks */}
-      <div className="flex flex-col gap-2 px-3 min-h-[2px]">
+      <div className="flex flex-col gap-2 px-3 min-h-[2px] overflow-y-auto no-scrollbar max-h-[calc(100svh-280px)]">
         {col.tasks.map((task) => (
           <TaskCard
             key={task.id}
