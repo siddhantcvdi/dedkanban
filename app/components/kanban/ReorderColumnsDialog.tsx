@@ -15,7 +15,7 @@ export function ReorderColumnsDialog({
 }) {
   const [items, setItems] = useState<Column[]>(columns);
   const dragIdx = useRef<number | null>(null);
-  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -23,25 +23,31 @@ export function ReorderColumnsDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  function getDisplayItems() {
+    if (dragIdx.current === null || overIdx === null || dragIdx.current === overIdx) return items;
+    const next = [...items];
+    const [removed] = next.splice(dragIdx.current, 1);
+    next.splice(overIdx, 0, removed);
+    return next;
+  }
+
   function handleDragStart(i: number) {
     dragIdx.current = i;
-    setDraggingIdx(i);
+    setOverIdx(i);
   }
 
   function handleDragOver(e: React.DragEvent, i: number) {
     e.preventDefault();
-    if (dragIdx.current === null || dragIdx.current === i) return;
-    const next = [...items];
-    const [removed] = next.splice(dragIdx.current, 1);
-    next.splice(i, 0, removed);
-    dragIdx.current = i;
-    setDraggingIdx(i);
-    setItems(next);
+    if (dragIdx.current === null) return;
+    setOverIdx(i);
   }
 
   function handleDragEnd() {
+    if (dragIdx.current !== null && overIdx !== null && dragIdx.current !== overIdx) {
+      setItems(getDisplayItems());
+    }
     dragIdx.current = null;
-    setDraggingIdx(null);
+    setOverIdx(null);
   }
 
   return (
@@ -63,7 +69,9 @@ export function ReorderColumnsDialog({
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-3 space-y-2">
-          {items.map((col, i) => (
+          {getDisplayItems().map((col, i) => {
+            const isDragging = overIdx !== null && dragIdx.current !== null && col.id === items[dragIdx.current]?.id;
+            return (
             <div
               key={col.id}
               draggable
@@ -71,7 +79,7 @@ export function ReorderColumnsDialog({
               onDragOver={(e) => handleDragOver(e, i)}
               onDragEnd={handleDragEnd}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-grab active:cursor-grabbing transition-all duration-150 select-none ${
-                draggingIdx === i
+                isDragging
                   ? "opacity-50 bg-[#ECEADA] dark:bg-[#313131] border-[#F76F53] dark:border-[#F76F53] scale-[0.98]"
                   : "bg-[#ECEADA] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#F76F53]/40 dark:hover:border-[#F76F53]/30"
               }`}
@@ -82,7 +90,8 @@ export function ReorderColumnsDialog({
               <span className="text-sm font-medium text-[#3D3A30] dark:text-[#ccc8c0] flex-1">{col.title}</span>
               <span className="text-xs text-[#9C9888] dark:text-[#5e5a55] tabular-nums">{col.tasks.length} tasks</span>
             </div>
-          ))}
+          );
+          })}
         </div>
 
         <div className="flex gap-2 px-5 py-4 border-t border-[#E8E5D5] dark:border-[#313131]">
