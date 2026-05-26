@@ -5,15 +5,9 @@ import { TrashIcon } from "./icons";
 export function TrashZone({
   dragging,
   dragOverTrash,
-  onDragOver,
-  onDragLeave,
-  onDrop,
 }: {
   dragging: boolean;
   dragOverTrash: boolean;
-  onDragOver: () => void;
-  onDragLeave: () => void;
-  onDrop: () => void;
 }) {
   return (
     <div
@@ -25,9 +19,6 @@ export function TrashZone({
             : "border-red-300 dark:border-red-800 text-red-300 dark:text-red-700 bg-red-50/50 dark:bg-red-950/20"
           : "border-[#DDD9C8] dark:border-[#313131] text-[#BCB8A8] dark:text-[#383430]"
       }`}
-      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
     >
       <TrashIcon size={18} />
       <span className="text-sm font-medium">

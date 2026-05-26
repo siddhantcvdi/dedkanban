@@ -31,10 +31,15 @@ export default function KanbanBoard() {
   const [dragging, setDragging] = useState<{ taskId: string; colId: string } | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
   const [dragOverTrash, setDragOverTrash] = useState(false);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after">("after");
 
   // Touch DnD
   const [holdingCardId, setHoldingCardId] = useState<string | null>(null);
   const touchRef = useRef<{ taskId: string; colId: string; ghost: HTMLElement | null; startX: number; startY: number; active: boolean; holdReady: boolean; holdTimer: ReturnType<typeof setTimeout> | null } | null>(null);
+  // Mouse DnD
+  const mouseRef = useRef<{ taskId: string; colId: string; el: HTMLElement; ghost: HTMLElement | null; startX: number; startY: number; offsetX: number; offsetY: number; active: boolean } | null>(null);
+  const dragOverRef = useRef<{ taskId: string | null; position: "before" | "after" }>({ taskId: null, position: "after" });
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
@@ -58,6 +63,100 @@ export default function KanbanBoard() {
     return () => window.removeEventListener("scroll", close, true);
   }, [cardCtxMenu]);
 
+  // Latest-ref pattern so mouse handlers (registered once) always see current state
+  const latestRef = useRef({ onColumnDrop: (_id: string) => {}, onTrashDrop: () => {}, clearDragState: () => {} });
+  latestRef.current.onColumnDrop = onColumnDrop;
+  latestRef.current.onTrashDrop = onTrashDrop;
+  latestRef.current.clearDragState = clearDragState;
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const s = mouseRef.current;
+      if (!s) return;
+      if (!s.active) {
+        if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < 4) return;
+        const rect = s.el.getBoundingClientRect();
+        s.offsetX = s.startX - rect.left;
+        s.offsetY = s.startY - rect.top;
+        const ghost = s.el.cloneNode(true) as HTMLElement;
+        Object.assign(ghost.style, { position: "fixed", top: rect.top + "px", left: rect.left + "px", width: rect.width + "px", opacity: "0.85", zIndex: "9999", pointerEvents: "none", transform: "scale(1.03)", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", transition: "none" });
+        document.body.appendChild(ghost);
+        document.body.style.cursor = "grabbing";
+        document.body.style.userSelect = "none";
+        s.ghost = ghost;
+        s.active = true;
+        setDragging({ taskId: s.taskId, colId: s.colId });
+      }
+      if (!s.ghost) return;
+      s.ghost.style.top = (e.clientY - s.offsetY) + "px";
+      s.ghost.style.left = (e.clientX - s.offsetX) + "px";
+      const board = boardScrollRef.current;
+      if (board) {
+        if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+        const edge = 72, speed = 10;
+        const bRect = board.getBoundingClientRect();
+        const dl = e.clientX - bRect.left, dr = bRect.right - e.clientX;
+        if (dl < edge || dr < edge) {
+          const scroll = () => {
+            if (!mouseRef.current?.active) return;
+            if (dl < edge) board.scrollLeft -= speed * (1 - dl / edge);
+            if (dr < edge) board.scrollLeft += speed * (1 - dr / edge);
+            scrollAnimRef.current = requestAnimationFrame(scroll);
+          };
+          scrollAnimRef.current = requestAnimationFrame(scroll);
+        }
+      }
+      s.ghost.style.display = "none";
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      s.ghost.style.display = "";
+      setDragOverColId(under?.closest("[data-colid]")?.getAttribute("data-colid") ?? null);
+      setDragOverTrash(!!under?.closest("[data-trash]"));
+      const taskEl = under?.closest<HTMLElement>("[data-taskid]");
+      if (taskEl && taskEl.dataset.taskid !== s.taskId) {
+        const r = taskEl.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        const buf = 6;
+        const prev = dragOverRef.current;
+        let pos: "before" | "after";
+        if (e.clientY < mid - buf) pos = "before";
+        else if (e.clientY > mid + buf) pos = "after";
+        else pos = prev.position; // dead zone — keep last
+        const tid = taskEl.dataset.taskid ?? null;
+        if (tid !== prev.taskId || pos !== prev.position) {
+          dragOverRef.current = { taskId: tid, position: pos };
+          setDragOverTaskId(tid);
+          setDragOverPosition(pos);
+        }
+      } else if (dragOverRef.current.taskId !== null) {
+        dragOverRef.current = { taskId: null, position: "after" };
+        setDragOverTaskId(null);
+      }
+    }
+
+    function onUp(e: MouseEvent) {
+      if (scrollAnimRef.current) { cancelAnimationFrame(scrollAnimRef.current); scrollAnimRef.current = null; }
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      const s = mouseRef.current;
+      if (!s) return;
+      mouseRef.current = null;
+      if (!s.active) return;
+      s.ghost!.style.display = "none";
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      if (s.ghost) document.body.removeChild(s.ghost);
+      if (under?.closest("[data-trash]")) { latestRef.current.onTrashDrop(); }
+      else {
+        const targetId = under?.closest("[data-colid]")?.getAttribute("data-colid");
+        if (targetId) latestRef.current.onColumnDrop(targetId);
+        else latestRef.current.clearDragState();
+      }
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- Helpers ----
   const activeBoard = boards.find((b) => b.id === activeBoardId);
   const columns = activeBoard?.columns ?? [];
@@ -70,19 +169,25 @@ export default function KanbanBoard() {
   }
 
   // ---- Drag & Drop ----
-  function onTaskDragStart(taskId: string, colId: string) { setDragging({ taskId, colId }); }
+  function onCardMouseDown(e: React.MouseEvent, taskId: string, colId: string) {
+    if (e.button !== 0) return;
+    mouseRef.current = { taskId, colId, el: e.currentTarget as HTMLElement, ghost: null, startX: e.clientX, startY: e.clientY, offsetX: 0, offsetY: 0, active: false };
+  }
 
-  function onTaskDragEnd() {
+  function clearDragState() {
     setDragging(null);
     setDragOverColId(null);
     setDragOverTrash(false);
+    setDragOverTaskId(null);
+    dragOverRef.current = { taskId: null, position: "after" };
   }
 
   function onColumnDrop(targetColId: string) {
-    if (!dragging || dragging.colId === targetColId) { setDragging(null); setDragOverColId(null); return; }
-    moveTask(dragging.taskId, dragging.colId, targetColId);
-    setDragging(null);
-    setDragOverColId(null);
+    if (!dragging) { clearDragState(); return; }
+    // Allow same-column drop only when targeting a specific task position
+    if (dragging.colId === targetColId && !dragOverTaskId) { clearDragState(); return; }
+    moveTask(dragging.taskId, dragging.colId, targetColId, dragOverTaskId, dragOverPosition);
+    clearDragState();
   }
 
   function onTrashDrop() {
@@ -161,6 +266,26 @@ export default function KanbanBoard() {
       s.ghost.style.display = "";
       setDragOverColId(under?.closest("[data-colid]")?.getAttribute("data-colid") ?? null);
       setDragOverTrash(!!under?.closest("[data-trash]"));
+      const taskEl = under?.closest<HTMLElement>("[data-taskid]");
+      if (taskEl && taskEl.dataset.taskid !== s.taskId) {
+        const r = taskEl.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        const buf = 6;
+        const prev = dragOverRef.current;
+        let pos: "before" | "after";
+        if (t.clientY < mid - buf) pos = "before";
+        else if (t.clientY > mid + buf) pos = "after";
+        else pos = prev.position;
+        const tid = taskEl.dataset.taskid ?? null;
+        if (tid !== prev.taskId || pos !== prev.position) {
+          dragOverRef.current = { taskId: tid, position: pos };
+          setDragOverTaskId(tid);
+          setDragOverPosition(pos);
+        }
+      } else if (dragOverRef.current.taskId !== null) {
+        dragOverRef.current = { taskId: null, position: "after" };
+        setDragOverTaskId(null);
+      }
     }
   }
 
@@ -179,12 +304,10 @@ export default function KanbanBoard() {
       else {
         const targetId = under?.closest("[data-colid]")?.getAttribute("data-colid");
         if (targetId) onColumnDrop(targetId);
-        else onTaskDragEnd();
+        else clearDragState();
       }
     }
-    setDragging(null);
-    setDragOverColId(null);
-    setDragOverTrash(false);
+    clearDragState();
     touchRef.current = null;
   }
 
@@ -206,16 +329,33 @@ export default function KanbanBoard() {
     );
   }
 
-  function moveTask(taskId: string, fromColId: string, toColId: string) {
+  function moveTask(taskId: string, fromColId: string, toColId: string, insertNearTaskId?: string | null, insertPosition?: "before" | "after") {
     const task = columns.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
     const targetColTitle = columns.find((c) => c.id === toColId)?.title;
 
+    function insertTask(tasks: Task[], t: Task): Task[] {
+      if (!insertNearTaskId) return [...tasks, t];
+      const nearIdx = tasks.findIndex((x) => x.id === insertNearTaskId);
+      if (nearIdx === -1) return [...tasks, t];
+      const idx = insertPosition === "before" ? nearIdx : nearIdx + 1;
+      const next = [...tasks];
+      next.splice(idx, 0, t);
+      return next;
+    }
+
     updateColumns((cols) => {
-      const t = cols.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
-      if (!t) return cols;
+      const srcTask = cols.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
+      if (!srcTask) return cols;
+      if (fromColId === toColId) {
+        return cols.map((col) => {
+          if (col.id !== fromColId) return col;
+          const filtered = col.tasks.filter((t) => t.id !== taskId);
+          return { ...col, tasks: insertTask(filtered, srcTask) };
+        });
+      }
       return cols.map((col) => {
         if (col.id === fromColId) return { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) };
-        if (col.id === toColId) return { ...col, tasks: [...col.tasks, t] };
+        if (col.id === toColId) return { ...col, tasks: insertTask(col.tasks, srcTask) };
         return col;
       });
     });
@@ -334,16 +474,14 @@ export default function KanbanBoard() {
               dragging={dragging}
               holdingCardId={holdingCardId}
               columns={columns}
-              onDragOver={() => { setDragOverColId(col.id); setDragOverTrash(false); }}
-              onDragLeave={() => setDragOverColId(null)}
-              onDrop={() => onColumnDrop(col.id)}
+              dragOverTaskId={dragOverTaskId}
+              dragOverPosition={dragOverPosition}
               onDelete={() => updateColumns((cols) => cols.filter((c) => c.id !== col.id))}
               onRename={(title) => updateColumns((cols) => cols.map((c) => c.id === col.id ? { ...c, title: title.trim() || "Untitled" } : c))}
               onAddTask={(task) => addTask(col.id, task)}
               onUpdateTask={(updated) => updateTask(col.id, updated)}
               onMoveTask={(taskId, targetColId) => moveTask(taskId, col.id, targetColId)}
-              onTaskDragStart={(taskId) => onTaskDragStart(taskId, col.id)}
-              onTaskDragEnd={onTaskDragEnd}
+              onCardMouseDown={(e, taskId) => onCardMouseDown(e, taskId, col.id)}
               onCardTouchStart={(e, taskId) => onCardTouchStart(e, taskId, col.id)}
               onCardTouchMove={onCardTouchMove}
               onCardTouchEnd={onCardTouchEnd}
@@ -402,9 +540,6 @@ export default function KanbanBoard() {
       <TrashZone
         dragging={!!dragging}
         dragOverTrash={dragOverTrash}
-        onDragOver={() => { setDragOverTrash(true); setDragOverColId(null); }}
-        onDragLeave={() => setDragOverTrash(false)}
-        onDrop={onTrashDrop}
       />
 
       {reorderOpen && (

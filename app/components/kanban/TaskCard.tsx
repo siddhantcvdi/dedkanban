@@ -9,8 +9,7 @@ export function TaskCard({
   task,
   isDone,
   onUpdate,
-  onDragStart,
-  onDragEnd,
+  onMouseDown,
   isDragging,
   isHolding,
   onTouchStart,
@@ -25,8 +24,7 @@ export function TaskCard({
   task: Task;
   isDone: boolean;
   onUpdate: (updated: Task) => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  onMouseDown: (e: React.MouseEvent) => void;
   isDragging: boolean;
   isHolding: boolean;
   onTouchStart: (e: React.TouchEvent) => void;
@@ -49,9 +47,7 @@ export function TaskCard({
   return (
     <>
       <div
-        draggable
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        onMouseDown={onMouseDown}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}

@@ -13,16 +13,14 @@ export function KanbanColumn({
   dragging,
   holdingCardId,
   columns,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  dragOverTaskId,
+  dragOverPosition,
   onDelete,
   onRename,
   onAddTask,
   onUpdateTask,
   onMoveTask,
-  onTaskDragStart,
-  onTaskDragEnd,
+  onCardMouseDown,
   onCardTouchStart,
   onCardTouchMove,
   onCardTouchEnd,
@@ -35,16 +33,14 @@ export function KanbanColumn({
   dragging: { taskId: string; colId: string } | null;
   holdingCardId: string | null;
   columns: Column[];
-  onDragOver: () => void;
-  onDragLeave: () => void;
-  onDrop: () => void;
+  dragOverTaskId: string | null;
+  dragOverPosition: "before" | "after";
   onDelete: () => void;
   onRename: (title: string) => void;
   onAddTask: (task: Task) => void;
   onUpdateTask: (updated: Task) => void;
   onMoveTask: (taskId: string, targetColId: string) => void;
-  onTaskDragStart: (taskId: string) => void;
-  onTaskDragEnd: () => void;
+  onCardMouseDown: (e: React.MouseEvent, taskId: string) => void;
   onCardTouchStart: (e: React.TouchEvent, taskId: string) => void;
   onCardTouchMove: (e: React.TouchEvent) => void;
   onCardTouchEnd: (e: React.TouchEvent) => void;
@@ -100,9 +96,6 @@ export function KanbanColumn({
           ? "bg-[#fff1ee] dark:bg-[#F76F53]/10 ring-2 ring-[#F76F53] dark:ring-[#F76F53] shadow-lg"
           : "bg-[#E6E4D7] dark:bg-[#282828] shadow-sm shadow-[#D8D5C4]/60 dark:shadow-[#1f1f1f]/60"
       }`}
-      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
     >
       {/* Column header */}
       <div className="px-4 pt-4 pb-2 flex items-center gap-2">
@@ -142,26 +135,35 @@ export function KanbanColumn({
 
       {/* Tasks */}
       <div className="flex flex-col gap-2 px-3 min-h-[2px] overflow-y-auto no-scrollbar max-h-[calc(100svh-280px)]">
-        {col.tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            isDone={isDone}
-            onUpdate={onUpdateTask}
-            onDragStart={() => onTaskDragStart(task.id)}
-            onDragEnd={onTaskDragEnd}
-            isDragging={dragging?.taskId === task.id}
-            isHolding={holdingCardId === task.id}
-            onTouchStart={(e) => onCardTouchStart(e, task.id)}
-            onTouchMove={onCardTouchMove}
-            onTouchEnd={onCardTouchEnd}
-            columns={columns}
-            currentColId={col.id}
-            onMove={(targetColId) => onMoveTask(task.id, targetColId)}
-            onContextMenu={onCardContextMenu ? (e) => { e.preventDefault(); onCardContextMenu(task.id, e.clientX, e.clientY); } : undefined}
-            onMenuButtonClick={onCardMenuButton ? (x, y) => onCardMenuButton(task.id, x, y) : undefined}
-          />
-        ))}
+        {col.tasks.map((task) => {
+          const isTarget = !!dragging && dragOverTaskId === task.id && dragging.taskId !== task.id;
+          return (
+            <div
+              key={task.id}
+              data-taskid={task.id}
+              className="relative"
+            >
+              <div className={`absolute inset-x-0 -top-1 h-0.5 bg-[#F76F53] rounded-full pointer-events-none z-10 transition-opacity duration-75 ${isTarget && dragOverPosition === "before" ? "opacity-100" : "opacity-0"}`} />
+              <div className={`absolute inset-x-0 -bottom-1 h-0.5 bg-[#F76F53] rounded-full pointer-events-none z-10 transition-opacity duration-75 ${isTarget && dragOverPosition === "after" ? "opacity-100" : "opacity-0"}`} />
+              <TaskCard
+                task={task}
+                isDone={isDone}
+                onUpdate={onUpdateTask}
+                onMouseDown={(e) => onCardMouseDown(e, task.id)}
+                isDragging={dragging?.taskId === task.id}
+                isHolding={holdingCardId === task.id}
+                onTouchStart={(e) => onCardTouchStart(e, task.id)}
+                onTouchMove={onCardTouchMove}
+                onTouchEnd={onCardTouchEnd}
+                columns={columns}
+                currentColId={col.id}
+                onMove={(targetColId) => onMoveTask(task.id, targetColId)}
+                onContextMenu={onCardContextMenu ? (e) => { e.preventDefault(); onCardContextMenu(task.id, e.clientX, e.clientY); } : undefined}
+                onMenuButtonClick={onCardMenuButton ? (x, y) => onCardMenuButton(task.id, x, y) : undefined}
+              />
+            </div>
+          );
+        })}
       </div>
 
       {/* Add task */}
