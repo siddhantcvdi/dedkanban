@@ -149,6 +149,14 @@ function CalendarIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+function DotsVerticalIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+    </svg>
+  );
+}
+
 function GripIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -461,6 +469,7 @@ function TaskCard({
   currentColId,
   onMove,
   onContextMenu,
+  onMenuButtonClick,
 }: {
   task: Task;
   isDone: boolean;
@@ -476,6 +485,7 @@ function TaskCard({
   currentColId: string;
   onMove: (targetColId: string) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onMenuButtonClick?: (x: number, y: number) => void;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const links = task.links ?? [];
@@ -505,16 +515,33 @@ function TaskCard({
             : "bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#f59a87] dark:hover:border-[#F76F53]/50 hover:shadow-md hover:shadow-[#D8D5C4]/50 dark:hover:shadow-[#1f1f1f]/50"
         }`}
       >
-        {sourceBoardName && (
-          <span className="inline-flex items-center mb-1.5 px-1.5 py-0.5 rounded-md bg-[#F76F53]/10 dark:bg-[#F76F53]/15 border border-[#F76F53]/25 dark:border-[#F76F53]/30 text-[#F76F53] dark:text-[#f99080] text-[10px] font-semibold tracking-wide">
-            {sourceBoardName}
-          </span>
-        )}
-        <p className={`text-sm leading-relaxed ${
-          isDone ? "line-through text-[#9C9888] dark:text-[#5e5a55]" : "text-[#3D3A30] dark:text-[#ccc8c0]"
-        }`}>
-          {task.content}
-        </p>
+        <div className="flex items-start gap-1">
+          <div className="flex-1 min-w-0">
+            {sourceBoardName && (
+              <span className="inline-flex items-center mb-1.5 px-1.5 py-0.5 rounded-md bg-[#F76F53]/10 dark:bg-[#F76F53]/15 border border-[#F76F53]/25 dark:border-[#F76F53]/30 text-[#F76F53] dark:text-[#f99080] text-[10px] font-semibold tracking-wide">
+                {sourceBoardName}
+              </span>
+            )}
+            <p className={`text-sm leading-relaxed ${
+              isDone ? "line-through text-[#9C9888] dark:text-[#5e5a55]" : "text-[#3D3A30] dark:text-[#ccc8c0]"
+            }`}>
+              {task.content}
+            </p>
+          </div>
+          {onMenuButtonClick && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                onMenuButtonClick(rect.left, rect.bottom + 4);
+              }}
+              className="flex-shrink-0 p-0.5 -mr-0.5 rounded-md text-[#BCB8A8] dark:text-[#4a4641] opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 hover:text-[#5C5849] dark:hover:text-[#a09890] hover:bg-[#DDD9C8]/60 dark:hover:bg-[#3a3a3a] transition-all"
+              title="Options"
+            >
+              <DotsVerticalIcon size={14} />
+            </button>
+          )}
+        </div>
         {links.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {links.map((link) => (
@@ -617,6 +644,20 @@ export default function KanbanBoard() {
 
   useClickOutside(boardCtxRef, useCallback(() => setBoardCtxMenu(null), []));
   useClickOutside(cardCtxRef, useCallback(() => setCardCtxMenu(null), []));
+
+  useEffect(() => {
+    if (!cardCtxMenu) return;
+    const close = () => setCardCtxMenu(null);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [cardCtxMenu]);
+
+  useEffect(() => {
+    if (!boardCtxMenu) return;
+    const close = () => setBoardCtxMenu(null);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [boardCtxMenu]);
   useClickOutside(linkPopoverRef, useCallback(() => { setLinkPopoverOpen(false); setNewLinkUrl(""); setNewLinkLabel(""); }, []));
 
   // Auth + load boards from Firestore
@@ -1100,6 +1141,17 @@ export default function KanbanBoard() {
               ) : (
                 <span className="max-w-[120px] truncate">{b.name}</span>
               )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setBoardCtxMenu({ boardId: b.id, x: rect.left, y: rect.bottom + 4 });
+                }}
+                className="flex-shrink-0 p-0.5 -mr-1 rounded opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-all"
+                title="Options"
+              >
+                <DotsVerticalIcon size={12} />
+              </button>
             </div>
           ))}
 
@@ -1219,15 +1271,17 @@ export default function KanbanBoard() {
                       </button>
                     )}
                   </div>
-                  <button
-                    onClick={() => deleteColumn(col.id)}
-                    className="p-1 rounded-md text-[#BCB8A8] dark:text-[#4a4641] hover:text-red-400 dark:hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex-shrink-0"
-                    title="Delete column"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
+                  {activeBoardId !== TODAY_BOARD_ID && (
+                    <button
+                      onClick={() => deleteColumn(col.id)}
+                      className="p-1 rounded-md text-[#BCB8A8] dark:text-[#4a4641] hover:text-red-400 dark:hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex-shrink-0"
+                      title="Delete column"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 <div className="mx-4 mb-2 h-px bg-[#D8D5C4] dark:bg-[#313131]" />
@@ -1253,6 +1307,9 @@ export default function KanbanBoard() {
                       onContextMenu={activeBoardId !== TODAY_BOARD_ID ? (e) => {
                         e.preventDefault();
                         setCardCtxMenu({ taskId: task.id, colId: col.id, x: e.clientX, y: e.clientY });
+                      } : undefined}
+                      onMenuButtonClick={activeBoardId !== TODAY_BOARD_ID ? (x, y) => {
+                        setCardCtxMenu({ taskId: task.id, colId: col.id, x, y });
                       } : undefined}
                     />
                   ))}
