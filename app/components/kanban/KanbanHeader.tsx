@@ -204,7 +204,7 @@ export function KanbanHeader({
       {boardCtxMenu && (
         <div
           ref={boardCtxRef}
-          className="fixed z-50 min-w-[140px] rounded-xl bg-white dark:bg-[#282828] border border-[#DDD9C8] dark:border-[#3a3a3a] shadow-xl shadow-[#D8D5C4]/50 dark:shadow-[#1f1f1f]/80 py-1.5 overflow-hidden"
+          className="fixed z-50 pointer-events-auto min-w-[140px] rounded-xl bg-white dark:bg-[#282828] border border-[#DDD9C8] dark:border-[#3a3a3a] shadow-xl shadow-[#D8D5C4]/50 dark:shadow-[#1f1f1f]/80 py-1.5 overflow-hidden"
           style={{ top: boardCtxMenu.y, left: boardCtxMenu.x }}
         >
           {boardCtxMenu.boardId !== TODAY_BOARD_ID && (
