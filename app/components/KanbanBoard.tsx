@@ -7,7 +7,7 @@ import { auth, db } from "../lib/firebase";
 
 // ---- Types ----
 type TaskLink = { id: string; url: string; label: string };
-type Task = { id: string; content: string; links: TaskLink[] };
+type Task = { id: string; content: string; links: TaskLink[]; sourceBoardName?: string };
 type Column = { id: string; title: string; tasks: Task[] };
 type Board = { id: string; name: string; columns: Column[] };
 type ThemeMode = "light" | "dark";
@@ -15,9 +15,22 @@ type ThemeMode = "light" | "dark";
 // ---- Storage keys (theme + active board remain local) ----
 const ACTIVE_BOARD_KEY = "kanban-active-board";
 const THEME_KEY = "kanban-theme";
+const TODAY_BOARD_ID = "board-today";
+const TODAY_COL_TODO_ID = "today-col-todo";
+
+const TODAY_COLUMNS: Column[] = [
+  { id: TODAY_COL_TODO_ID, title: "To Do", tasks: [] },
+  { id: "today-col-progress", title: "In Progress", tasks: [] },
+  { id: "today-col-done", title: "Done", tasks: [] },
+];
 
 // ---- Defaults ----
 const DEFAULT_BOARDS: Board[] = [
+  {
+    id: TODAY_BOARD_ID,
+    name: "Today",
+    columns: TODAY_COLUMNS,
+  },
   {
     id: "board-default",
     name: "My Board",
@@ -122,6 +135,128 @@ function ExternalLinkIcon({ size = 10 }: { size?: number }) {
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" y1="14" x2="21" y2="3" />
     </svg>
+  );
+}
+
+function CalendarIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
+function GripIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// ---- Reorder Columns Dialog ----
+function ReorderColumnsDialog({
+  columns,
+  onSave,
+  onClose,
+}: {
+  columns: Column[];
+  onSave: (reordered: Column[]) => void;
+  onClose: () => void;
+}) {
+  const [items, setItems] = useState<Column[]>(columns);
+  const dragIdx = useRef<number | null>(null);
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function handleDragStart(i: number) {
+    dragIdx.current = i;
+    setDraggingIdx(i);
+  }
+
+  function handleDragOver(e: React.DragEvent, i: number) {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === i) return;
+    const next = [...items];
+    const [removed] = next.splice(dragIdx.current, 1);
+    next.splice(i, 0, removed);
+    dragIdx.current = i;
+    setDraggingIdx(i);
+    setItems(next);
+  }
+
+  function handleDragEnd() {
+    dragIdx.current = null;
+    setDraggingIdx(null);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/10 dark:bg-black/20 backdrop-blur-[2px]"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-sm rounded-2xl bg-[#F2F0E3] dark:bg-[#282828] shadow-2xl border border-[#DDD9C8] dark:border-[#3a3a3a] flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#E8E5D5] dark:border-[#313131]">
+          <span className="text-sm font-semibold text-[#3D3A30] dark:text-[#ccc8c0]">Reorder Columns</span>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-[#9C9888] hover:text-[#5C5849] dark:hover:text-[#ccc8c0] hover:bg-[#E6E4D7] dark:hover:bg-[#313131] transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-3 space-y-2">
+          {items.map((col, i) => (
+            <div
+              key={col.id}
+              draggable
+              onDragStart={() => handleDragStart(i)}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDragEnd={handleDragEnd}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-grab active:cursor-grabbing transition-all duration-150 select-none ${
+                draggingIdx === i
+                  ? "opacity-50 bg-[#ECEADA] dark:bg-[#313131] border-[#F76F53] dark:border-[#F76F53] scale-[0.98]"
+                  : "bg-[#ECEADA] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#F76F53]/40 dark:hover:border-[#F76F53]/30"
+              }`}
+            >
+              <span className="text-[#BCB8A8] dark:text-[#4a4641]">
+                <GripIcon size={14} />
+              </span>
+              <span className="text-sm font-medium text-[#3D3A30] dark:text-[#ccc8c0] flex-1">{col.title}</span>
+              <span className="text-xs text-[#9C9888] dark:text-[#5e5a55] tabular-nums">{col.tasks.length} tasks</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 px-5 py-4 border-t border-[#E8E5D5] dark:border-[#313131]">
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm font-medium bg-[#F2F0E3] dark:bg-[#313131] hover:bg-[#E0DDD0] dark:hover:bg-[#38383f] text-[#5C5849] dark:text-[#a09890] rounded-xl transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={() => { onSave(items); onClose(); }}
+            className="flex-1 py-2.5 text-sm font-semibold bg-[#F76F53] hover:bg-[#e55c40] text-white rounded-xl transition-colors shadow-sm"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -325,6 +460,7 @@ function TaskCard({
   columns,
   currentColId,
   onMove,
+  onContextMenu,
 }: {
   task: Task;
   isDone: boolean;
@@ -339,9 +475,11 @@ function TaskCard({
   columns: Column[];
   currentColId: string;
   onMove: (targetColId: string) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const links = task.links ?? [];
+  const sourceBoardName = task.sourceBoardName;
 
   function normalizeUrl(url: string) {
     return /^https?:\/\//i.test(url) ? url : "https://" + url;
@@ -357,6 +495,7 @@ function TaskCard({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onClick={() => setModalOpen(true)}
+        onContextMenu={onContextMenu}
         style={{ touchAction: "none" }}
         className={`group p-3 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
           isDragging
@@ -366,6 +505,11 @@ function TaskCard({
             : "bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#f59a87] dark:hover:border-[#F76F53]/50 hover:shadow-md hover:shadow-[#D8D5C4]/50 dark:hover:shadow-[#1f1f1f]/50"
         }`}
       >
+        {sourceBoardName && (
+          <span className="inline-flex items-center mb-1.5 px-1.5 py-0.5 rounded-md bg-[#F76F53]/10 dark:bg-[#F76F53]/15 border border-[#F76F53]/25 dark:border-[#F76F53]/30 text-[#F76F53] dark:text-[#f99080] text-[10px] font-semibold tracking-wide">
+            {sourceBoardName}
+          </span>
+        )}
         <p className={`text-sm leading-relaxed ${
           isDone ? "line-through text-[#9C9888] dark:text-[#5e5a55]" : "text-[#3D3A30] dark:text-[#ccc8c0]"
         }`}>
@@ -421,6 +565,7 @@ export default function KanbanBoard() {
   const [user, setUser] = useState<User | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [boardsLoaded, setBoardsLoaded] = useState(false);
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Drag state
@@ -456,6 +601,13 @@ export default function KanbanBoard() {
   const [renamingBoardName, setRenamingBoardName] = useState("");
   const boardCtxRef = useRef<HTMLDivElement>(null);
 
+  // Card context menu
+  const [cardCtxMenu, setCardCtxMenu] = useState<{ taskId: string; colId: string; x: number; y: number } | null>(null);
+  const cardCtxRef = useRef<HTMLDivElement>(null);
+
+  // Reorder columns dialog
+  const [reorderOpen, setReorderOpen] = useState(false);
+
   const newBoardInputRef = useRef<HTMLDivElement>(null);
 
   useClickOutside(newBoardInputRef, useCallback(() => {
@@ -464,6 +616,7 @@ export default function KanbanBoard() {
   }, []));
 
   useClickOutside(boardCtxRef, useCallback(() => setBoardCtxMenu(null), []));
+  useClickOutside(cardCtxRef, useCallback(() => setCardCtxMenu(null), []));
   useClickOutside(linkPopoverRef, useCallback(() => { setLinkPopoverOpen(false); setNewLinkUrl(""); setNewLinkLabel(""); }, []));
 
   // Auth + load boards from Firestore
@@ -471,37 +624,59 @@ export default function KanbanBoard() {
     const savedTheme = localStorage.getItem(THEME_KEY) as ThemeMode | null;
     setThemeMode((savedTheme === "light" || savedTheme === "dark") ? savedTheme : "light");
 
+    console.log("[kanban] useEffect running, setting up onAuthStateChanged");
+
     const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("[kanban] onAuthStateChanged fired", { uid: firebaseUser?.uid ?? null });
+
       if (!firebaseUser) {
+        console.log("[kanban] no user → setMounted(true)");
         setUser(null);
         setUid(null);
+        setBoardsLoaded(true);
         setMounted(true);
         return;
       }
+
       setUser(firebaseUser);
       setUid(firebaseUser.uid);
+      console.log("[kanban] user found, setMounted(true), starting Firestore load");
+      setMounted(true);
 
       try {
+        console.log("[kanban] getDoc start");
         const userDoc = doc(db, "users", firebaseUser.uid);
         const snap = await getDoc(userDoc);
+        console.log("[kanban] getDoc done", { exists: snap.exists() });
         const savedActive = localStorage.getItem(ACTIVE_BOARD_KEY);
 
         if (snap.exists()) {
           const loadedBoards: Board[] = snap.data().boards ?? DEFAULT_BOARDS;
-          const activeId = savedActive && loadedBoards.find((b) => b.id === savedActive)
-            ? savedActive : loadedBoards[0].id;
-          setBoards(loadedBoards);
+          const hasToday = loadedBoards.some((b) => b.id === TODAY_BOARD_ID);
+          const finalBoards = (hasToday ? loadedBoards : [{ id: TODAY_BOARD_ID, name: "Today", columns: TODAY_COLUMNS }, ...loadedBoards])
+            .map((b) => b.id === TODAY_BOARD_ID && !b.columns.some((c) => c.id === TODAY_COL_TODO_ID)
+              ? { ...b, columns: TODAY_COLUMNS }
+              : b
+            );
+          const activeId = savedActive && finalBoards.find((b) => b.id === savedActive)
+            ? savedActive : finalBoards[0].id;
+          console.log("[kanban] loaded boards", finalBoards.length, "activeId:", activeId);
+          setBoards(finalBoards);
           setActiveBoardId(activeId);
         } else {
+          console.log("[kanban] no doc, using defaults");
           setBoards(DEFAULT_BOARDS);
           setActiveBoardId(DEFAULT_BOARDS[0].id);
           await setDoc(userDoc, { boards: DEFAULT_BOARDS });
+          console.log("[kanban] default doc written");
         }
-      } catch {
+      } catch (err) {
+        console.error("[kanban] Firestore error", err);
         setBoards(DEFAULT_BOARDS);
         setActiveBoardId(DEFAULT_BOARDS[0].id);
       }
-      setMounted(true);
+      console.log("[kanban] setBoardsLoaded(true)");
+      setBoardsLoaded(true);
     });
 
     return () => unsubAuth();
@@ -509,7 +684,7 @@ export default function KanbanBoard() {
 
   // Debounced Firestore write whenever boards change
   useEffect(() => {
-    if (!mounted || !uid) return;
+    if (!mounted || !uid || !boardsLoaded) return;
     localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId);
     if (writeTimer.current) clearTimeout(writeTimer.current);
     writeTimer.current = setTimeout(async () => {
@@ -517,7 +692,7 @@ export default function KanbanBoard() {
       await setDoc(doc(db, "users", uid), { boards });
       setSyncing(false);
     }, 800);
-  }, [boards, activeBoardId, mounted, uid]);
+  }, [boards, activeBoardId, mounted, uid, boardsLoaded]);
 
   // Apply dark class and update theme-color meta based on theme mode
   useEffect(() => {
@@ -703,6 +878,10 @@ export default function KanbanBoard() {
     setAddingCol(false);
   }
 
+  function reorderColumns(reordered: Column[]) {
+    updateColumns(() => reordered);
+  }
+
   // ---- Task actions ----
   function addTask(colId: string) {
     const content = newTaskContent.trim();
@@ -754,10 +933,31 @@ export default function KanbanBoard() {
   }
 
   function deleteBoard(boardId: string) {
+    if (boardId === TODAY_BOARD_ID) return;
     if (boards.length === 1) return;
     const remaining = boards.filter((b) => b.id !== boardId);
     setBoards(remaining);
     if (activeBoardId === boardId) setActiveBoardId(remaining[0].id);
+  }
+
+  function moveTaskToToday(taskId: string, fromColId: string) {
+    const sourceBoard = boards.find((b) => b.id === activeBoardId);
+    if (!sourceBoard) return;
+    const task = sourceBoard.columns.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const taskCopy: Task = { ...task, id: genId(), sourceBoardName: sourceBoard.name };
+    setBoards((prev) =>
+      prev.map((board) =>
+        board.id === TODAY_BOARD_ID
+          ? {
+              ...board,
+              columns: board.columns.map((col) =>
+                col.id === TODAY_COL_TODO_ID ? { ...col, tasks: [...col.tasks, taskCopy] } : col
+              ),
+            }
+          : board
+      )
+    );
   }
 
   function commitRenameBoard(boardId: string, name: string) {
@@ -783,6 +983,16 @@ export default function KanbanBoard() {
 
   if (!mounted) {
     return <div className="min-h-screen bg-[#F2F0E3] dark:bg-[#1f1f1f]" />;
+  }
+
+  if (mounted && user && !boardsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F2F0E3] dark:bg-[#1f1f1f]">
+        <svg className="animate-spin text-[#F76F53]" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+        </svg>
+      </div>
+    );
   }
 
   if (!user) {
@@ -853,7 +1063,11 @@ export default function KanbanBoard() {
               key={b.id}
               className={`group flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 cursor-pointer select-none transition-all duration-150 ${
                 b.id === activeBoardId
-                  ? "bg-[#F2F0E3] dark:bg-[#313131] text-[#1E1C16] dark:text-white shadow-sm"
+                  ? b.id === TODAY_BOARD_ID
+                    ? "bg-[#F76F53]/15 dark:bg-[#F76F53]/20 text-[#F76F53] dark:text-[#f99080] shadow-sm"
+                    : "bg-[#F2F0E3] dark:bg-[#313131] text-[#1E1C16] dark:text-white shadow-sm"
+                  : b.id === TODAY_BOARD_ID
+                  ? "text-[#F76F53]/70 dark:text-[#F76F53]/50 hover:bg-[#fff1ee] dark:hover:bg-[#F76F53]/8 hover:text-[#F76F53] dark:hover:text-[#f99080]"
                   : "text-[#7C7868] dark:text-[#7d7870] hover:bg-[#ECEADA] dark:hover:bg-[#313131]/60 hover:text-[#3D3A30] dark:hover:text-[#ccc8c0]"
               }`}
               onClick={() => setActiveBoardId(b.id)}
@@ -862,10 +1076,14 @@ export default function KanbanBoard() {
                 setBoardCtxMenu({ boardId: b.id, x: e.clientX, y: e.clientY });
               }}
             >
+              {b.id === TODAY_BOARD_ID ? (
+                <CalendarIcon size={12} />
+              ) : (
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 opacity-60">
                 <rect x="3" y="3" width="7" height="18" rx="1" />
                 <rect x="14" y="3" width="7" height="11" rx="1" />
               </svg>
+              )}
               {renamingBoardId === b.id ? (
                 <input
                   autoFocus
@@ -1032,6 +1250,10 @@ export default function KanbanBoard() {
                       columns={columns}
                       currentColId={col.id}
                       onMove={(targetColId) => moveTask(task.id, col.id, targetColId)}
+                      onContextMenu={activeBoardId !== TODAY_BOARD_ID ? (e) => {
+                        e.preventDefault();
+                        setCardCtxMenu({ taskId: task.id, colId: col.id, x: e.clientX, y: e.clientY });
+                      } : undefined}
                     />
                   ))}
                 </div>
@@ -1167,6 +1389,20 @@ export default function KanbanBoard() {
             );
           })}
 
+          {/* Reorder columns button */}
+          {columns.length > 1 && (
+            <div className="flex-shrink-0 flex items-start pt-1">
+              <button
+                onClick={() => setReorderOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-[#C8C4B2] dark:border-[#3a3a3a] text-[#9C9888] dark:text-[#5e5a55] hover:border-[#F76F53] dark:hover:border-[#F76F53]/60 hover:text-[#F76F53] dark:hover:text-[#f99080] hover:bg-[#fff1ee]/50 dark:hover:bg-[#F76F53]/6 transition-colors text-xs font-medium"
+                title="Reorder columns"
+              >
+                <GripIcon size={13} />
+                Reorder
+              </button>
+            </div>
+          )}
+
           {/* Add column */}
           <div className="w-[82vw] max-w-[320px] sm:w-72 flex-shrink-0">
             {addingCol ? (
@@ -1240,7 +1476,7 @@ export default function KanbanBoard() {
           >
             Rename
           </button>
-          {boards.length > 1 && (
+          {boards.length > 1 && boardCtxMenu.boardId !== TODAY_BOARD_ID && (
             <button
               className="w-full text-left px-3 py-1.5 text-sm text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
               onClick={() => { deleteBoard(boardCtxMenu.boardId); setBoardCtxMenu(null); }}
@@ -1248,6 +1484,35 @@ export default function KanbanBoard() {
               Delete
             </button>
           )}
+        </div>
+      )}
+
+      {/* Reorder columns dialog */}
+      {reorderOpen && (
+        <ReorderColumnsDialog
+          columns={columns}
+          onSave={reorderColumns}
+          onClose={() => setReorderOpen(false)}
+        />
+      )}
+
+      {/* Card context menu */}
+      {cardCtxMenu && (
+        <div
+          ref={cardCtxRef}
+          className="fixed z-50 min-w-[160px] rounded-xl bg-white dark:bg-[#282828] border border-[#DDD9C8] dark:border-[#3a3a3a] shadow-xl shadow-[#D8D5C4]/50 dark:shadow-[#1f1f1f]/80 py-1.5 overflow-hidden"
+          style={{ top: cardCtxMenu.y, left: cardCtxMenu.x }}
+        >
+          <button
+            className="w-full text-left px-3 py-2 text-sm text-[#3D3A30] dark:text-[#ccc8c0] hover:bg-[#fff1ee] dark:hover:bg-[#F76F53]/10 hover:text-[#F76F53] dark:hover:text-[#f99080] transition-colors flex items-center gap-2"
+            onClick={() => {
+              moveTaskToToday(cardCtxMenu.taskId, cardCtxMenu.colId);
+              setCardCtxMenu(null);
+            }}
+          >
+            <CalendarIcon size={13} />
+            Move to Today
+          </button>
         </div>
       )}
     </div>
