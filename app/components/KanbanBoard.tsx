@@ -353,6 +353,7 @@ function TaskCard({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onClick={() => setModalOpen(true)}
+        style={{ touchAction: "none" }}
         className={`group p-3 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
           isDragging
             ? "opacity-40 scale-95 bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a]"
@@ -418,6 +419,8 @@ export default function KanbanBoard() {
 
   // Touch DnD
   const touchRef = useRef<{ taskId: string; colId: string; ghost: HTMLElement | null; startX: number; startY: number; active: boolean } | null>(null);
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const scrollAnimRef = useRef<number | null>(null);
 
   // Column edit/add state
   const [editingColId, setEditingColId] = useState<string | null>(null);
@@ -546,11 +549,11 @@ export default function KanbanBoard() {
     if (!s) return;
     const t = e.touches[0];
     if (!s.active) {
-      if (Math.hypot(t.clientX - s.startX, t.clientY - s.startY) < 8) return;
+      if (Math.hypot(t.clientX - s.startX, t.clientY - s.startY) < 6) return;
       const el = e.currentTarget as HTMLElement;
       const rect = el.getBoundingClientRect();
       const ghost = el.cloneNode(true) as HTMLElement;
-      Object.assign(ghost.style, { position: "fixed", top: rect.top + "px", left: rect.left + "px", width: rect.width + "px", opacity: "0.8", zIndex: "9999", pointerEvents: "none", transform: "scale(1.03)", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)" });
+      Object.assign(ghost.style, { position: "fixed", top: rect.top + "px", left: rect.left + "px", width: rect.width + "px", opacity: "0.85", zIndex: "9999", pointerEvents: "none", transform: "scale(1.03)", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", transition: "none" });
       document.body.appendChild(ghost);
       s.ghost = ghost;
       s.active = true;
@@ -559,10 +562,30 @@ export default function KanbanBoard() {
     if (s.active && s.ghost) {
       e.preventDefault();
       const el = e.currentTarget as HTMLElement;
-      const h = el.getBoundingClientRect().height;
-      const w = el.getBoundingClientRect().width;
-      s.ghost.style.top = (t.clientY - h / 2) + "px";
-      s.ghost.style.left = (t.clientX - w / 2) + "px";
+      const rect = el.getBoundingClientRect();
+      s.ghost.style.top = (t.clientY - rect.height / 2) + "px";
+      s.ghost.style.left = (t.clientX - rect.width / 2) + "px";
+
+      // Auto-scroll board when near left/right edges
+      const board = boardScrollRef.current;
+      if (board) {
+        if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+        const edge = 72;
+        const speed = 10;
+        const bRect = board.getBoundingClientRect();
+        const distLeft = t.clientX - bRect.left;
+        const distRight = bRect.right - t.clientX;
+        if (distLeft < edge || distRight < edge) {
+          const scroll = () => {
+            if (!touchRef.current?.active) return;
+            if (distLeft < edge) board.scrollLeft -= speed * (1 - distLeft / edge);
+            if (distRight < edge) board.scrollLeft += speed * (1 - distRight / edge);
+            scrollAnimRef.current = requestAnimationFrame(scroll);
+          };
+          scrollAnimRef.current = requestAnimationFrame(scroll);
+        }
+      }
+
       s.ghost.style.display = "none";
       const under = document.elementFromPoint(t.clientX, t.clientY);
       s.ghost.style.display = "";
@@ -572,6 +595,7 @@ export default function KanbanBoard() {
   }
 
   function onCardTouchEnd(e: React.TouchEvent) {
+    if (scrollAnimRef.current) { cancelAnimationFrame(scrollAnimRef.current); scrollAnimRef.current = null; }
     const s = touchRef.current;
     if (!s) return;
     if (s.active) {
@@ -779,7 +803,7 @@ export default function KanbanBoard() {
       </div>
 
       {/* Board */}
-      <div className="flex-1 overflow-x-auto">
+      <div ref={boardScrollRef} className="flex-1 overflow-x-auto">
         <div className="flex gap-3 px-2 pt-3 pb-6 sm:gap-4 sm:px-4 sm:pt-4 items-start min-w-max">
           {columns.map((col) => {
             const isDone = col.title.trim().toLowerCase() === "done";
