@@ -419,7 +419,10 @@ export default function KanbanBoard() {
         <div
           ref={cardCtxRef}
           className="fixed z-50 min-w-[160px] rounded-xl bg-white dark:bg-[#282828] border border-[#DDD9C8] dark:border-[#3a3a3a] shadow-xl shadow-[#D8D5C4]/50 dark:shadow-[#1f1f1f]/80 py-1.5 overflow-hidden"
-          style={{ top: cardCtxMenu.y, left: cardCtxMenu.x }}
+          style={{
+            top: Math.min(cardCtxMenu.y, window.innerHeight - 56),
+            left: Math.min(cardCtxMenu.x, window.innerWidth - 168),
+          }}
         >
           <button
             className="w-full text-left px-3 py-2 text-sm text-[#3D3A30] dark:text-[#ccc8c0] hover:bg-[#fff1ee] dark:hover:bg-[#F76F53]/10 hover:text-[#F76F53] dark:hover:text-[#f99080] transition-colors flex items-center gap-2"
