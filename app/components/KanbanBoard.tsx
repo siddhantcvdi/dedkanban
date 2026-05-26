@@ -129,11 +129,17 @@ function TaskModal({
   isDone,
   onSave,
   onClose,
+  columns,
+  currentColId,
+  onMove,
 }: {
   task: Task;
   isDone: boolean;
   onSave: (updated: Task) => void;
   onClose: () => void;
+  columns: Column[];
+  currentColId: string;
+  onMove: (targetColId: string) => void;
 }) {
   const [content, setContent] = useState(task.content);
   const [links, setLinks] = useState<TaskLink[]>(task.links ?? []);
@@ -270,12 +276,30 @@ function TaskModal({
           </div>
         </div>
 
+        {/* Move to column */}
+        {columns.filter((c) => c.id !== currentColId).length > 0 && (
+          <div className="px-5 pb-3 space-y-1.5">
+            <label className="text-xs font-semibold text-[#7C7868] dark:text-[#7d7870] uppercase tracking-wide">Move to</label>
+            <div className="flex flex-wrap gap-1.5">
+              {columns.filter((c) => c.id !== currentColId).map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { onMove(c.id); onClose(); }}
+                  className="px-3 py-1 text-xs font-medium rounded-lg bg-[#ECEADA] dark:bg-[#313131] text-[#5C5849] dark:text-[#a09890] hover:bg-[#F76F53] hover:text-white dark:hover:bg-[#F76F53] dark:hover:text-white transition-colors"
+                >
+                  {c.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex gap-2 px-5 py-4 border-t border-[#E8E5D5] dark:border-[#313131]">
-          <button onClick={onClose} className="flex-1 py-2 text-sm font-medium bg-[#F2F0E3] dark:bg-[#313131] hover:bg-[#E0DDD0] dark:hover:bg-[#38383f] text-[#5C5849] dark:text-[#a09890] rounded-xl transition-colors">
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm font-medium bg-[#F2F0E3] dark:bg-[#313131] hover:bg-[#E0DDD0] dark:hover:bg-[#38383f] text-[#5C5849] dark:text-[#a09890] rounded-xl transition-colors">
             Cancel
           </button>
-          <button onClick={save} className="flex-1 py-2 text-sm font-semibold bg-[#F76F53] hover:bg-[#e55c40] text-white rounded-xl transition-colors shadow-sm">
+          <button onClick={save} className="flex-1 py-2.5 text-sm font-semibold bg-[#F76F53] hover:bg-[#e55c40] text-white rounded-xl transition-colors shadow-sm">
             Save
           </button>
         </div>
@@ -292,6 +316,12 @@ function TaskCard({
   onDragStart,
   onDragEnd,
   isDragging,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  columns,
+  currentColId,
+  onMove,
 }: {
   task: Task;
   isDone: boolean;
@@ -299,6 +329,12 @@ function TaskCard({
   onDragStart: () => void;
   onDragEnd: () => void;
   isDragging: boolean;
+  onTouchStart: (e: React.TouchEvent) => void;
+  onTouchMove: (e: React.TouchEvent) => void;
+  onTouchEnd: (e: React.TouchEvent) => void;
+  columns: Column[];
+  currentColId: string;
+  onMove: (targetColId: string) => void;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const links = task.links ?? [];
@@ -313,14 +349,17 @@ function TaskCard({
         draggable
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
         onClick={() => setModalOpen(true)}
-        className={`group p-3 rounded-xl border cursor-pointer transition-all duration-150 ${
+        className={`group p-3 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
           isDragging
             ? "opacity-40 scale-95 bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a]"
             : "bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#f59a87] dark:hover:border-[#F76F53]/50 hover:shadow-md hover:shadow-[#D8D5C4]/50 dark:hover:shadow-[#1f1f1f]/50"
         }`}
       >
-        <p className={`text-sm leading-relaxed select-none ${
+        <p className={`text-sm leading-relaxed ${
           isDone ? "line-through text-[#9C9888] dark:text-[#5e5a55]" : "text-[#3D3A30] dark:text-[#ccc8c0]"
         }`}>
           {task.content}
@@ -351,6 +390,9 @@ function TaskCard({
           isDone={isDone}
           onSave={onUpdate}
           onClose={() => setModalOpen(false)}
+          columns={columns}
+          currentColId={currentColId}
+          onMove={onMove}
         />
       )}
     </>
@@ -373,6 +415,9 @@ export default function KanbanBoard() {
   const [dragging, setDragging] = useState<{ taskId: string; colId: string } | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
   const [dragOverTrash, setDragOverTrash] = useState(false);
+
+  // Touch DnD
+  const touchRef = useRef<{ taskId: string; colId: string; ghost: HTMLElement | null; startX: number; startY: number; active: boolean } | null>(null);
 
   // Column edit/add state
   const [editingColId, setEditingColId] = useState<string | null>(null);
@@ -490,6 +535,60 @@ export default function KanbanBoard() {
     setDragOverTrash(false);
   }
 
+  // ---- Touch DnD ----
+  function onCardTouchStart(e: React.TouchEvent, taskId: string, colId: string) {
+    const t = e.touches[0];
+    touchRef.current = { taskId, colId, ghost: null, startX: t.clientX, startY: t.clientY, active: false };
+  }
+
+  function onCardTouchMove(e: React.TouchEvent) {
+    const s = touchRef.current;
+    if (!s) return;
+    const t = e.touches[0];
+    if (!s.active) {
+      if (Math.hypot(t.clientX - s.startX, t.clientY - s.startY) < 8) return;
+      const el = e.currentTarget as HTMLElement;
+      const rect = el.getBoundingClientRect();
+      const ghost = el.cloneNode(true) as HTMLElement;
+      Object.assign(ghost.style, { position: "fixed", top: rect.top + "px", left: rect.left + "px", width: rect.width + "px", opacity: "0.8", zIndex: "9999", pointerEvents: "none", transform: "scale(1.03)", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)" });
+      document.body.appendChild(ghost);
+      s.ghost = ghost;
+      s.active = true;
+      setDragging({ taskId: s.taskId, colId: s.colId });
+    }
+    if (s.active && s.ghost) {
+      e.preventDefault();
+      const el = e.currentTarget as HTMLElement;
+      const h = el.getBoundingClientRect().height;
+      const w = el.getBoundingClientRect().width;
+      s.ghost.style.top = (t.clientY - h / 2) + "px";
+      s.ghost.style.left = (t.clientX - w / 2) + "px";
+      s.ghost.style.display = "none";
+      const under = document.elementFromPoint(t.clientX, t.clientY);
+      s.ghost.style.display = "";
+      setDragOverColId(under?.closest("[data-colid]")?.getAttribute("data-colid") ?? null);
+      setDragOverTrash(!!under?.closest("[data-trash]"));
+    }
+  }
+
+  function onCardTouchEnd(e: React.TouchEvent) {
+    const s = touchRef.current;
+    if (!s) return;
+    if (s.active) {
+      const t = e.changedTouches[0];
+      if (s.ghost) s.ghost.style.display = "none";
+      const under = document.elementFromPoint(t.clientX, t.clientY);
+      if (s.ghost) document.body.removeChild(s.ghost);
+      if (under?.closest("[data-trash]")) { onTrashDrop(); }
+      else {
+        const targetId = under?.closest("[data-colid]")?.getAttribute("data-colid");
+        if (targetId) onColumnDrop(targetId);
+        else onTaskDragEnd();
+      }
+    }
+    touchRef.current = null;
+  }
+
   // ---- Column actions ----
   function deleteColumn(colId: string) {
     updateColumns((cols) => cols.filter((c) => c.id !== colId));
@@ -525,6 +624,18 @@ export default function KanbanBoard() {
     setNewLinkUrl("");
     setNewLinkLabel("");
     setAddingTaskColId(null);
+  }
+
+  function moveTask(taskId: string, fromColId: string, toColId: string) {
+    updateColumns((cols) => {
+      const task = cols.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
+      if (!task) return cols;
+      return cols.map((col) => {
+        if (col.id === fromColId) return { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) };
+        if (col.id === toColId) return { ...col, tasks: [...col.tasks, task] };
+        return col;
+      });
+    });
   }
 
   function updateTask(colId: string, updated: Task) {
@@ -669,13 +780,14 @@ export default function KanbanBoard() {
 
       {/* Board */}
       <div className="flex-1 overflow-x-auto">
-        <div className="flex gap-4 px-4 pt-4 pb-6 items-start min-w-max">
+        <div className="flex gap-3 px-2 pt-3 pb-6 sm:gap-4 sm:px-4 sm:pt-4 items-start min-w-max">
           {columns.map((col) => {
             const isDone = col.title.trim().toLowerCase() === "done";
             return (
               <div
                 key={col.id}
-                className={`flex flex-col w-72 rounded-2xl transition-all duration-200 ${
+                data-colid={col.id}
+                className={`flex flex-col w-[82vw] max-w-[320px] sm:w-72 rounded-2xl transition-all duration-200 ${
                   dragOverColId === col.id
                     ? "bg-[#fff1ee] dark:bg-[#F76F53]/10 ring-2 ring-[#F76F53] dark:ring-[#F76F53] shadow-lg"
                     : "bg-[#E6E4D7] dark:bg-[#282828] shadow-sm shadow-[#D8D5C4]/60 dark:shadow-[#1f1f1f]/60"
@@ -737,6 +849,12 @@ export default function KanbanBoard() {
                       onDragStart={() => onTaskDragStart(task.id, col.id)}
                       onDragEnd={onTaskDragEnd}
                       isDragging={dragging?.taskId === task.id}
+                      onTouchStart={(e) => onCardTouchStart(e, task.id, col.id)}
+                      onTouchMove={onCardTouchMove}
+                      onTouchEnd={onCardTouchEnd}
+                      columns={columns}
+                      currentColId={col.id}
+                      onMove={(targetColId) => moveTask(task.id, col.id, targetColId)}
                     />
                   ))}
                 </div>
@@ -873,7 +991,7 @@ export default function KanbanBoard() {
           })}
 
           {/* Add column */}
-          <div className="w-72 flex-shrink-0">
+          <div className="w-[82vw] max-w-[320px] sm:w-72 flex-shrink-0">
             {addingCol ? (
               <div className="rounded-2xl bg-[#F2F0E3] dark:bg-[#282828] shadow-sm p-4 space-y-3">
                 <input
@@ -911,7 +1029,7 @@ export default function KanbanBoard() {
 
       {/* Trash zone */}
       <div
-        className={`mx-6 mb-6 rounded-2xl border-2 border-dashed flex items-center justify-center gap-3 py-5 transition-all duration-200 ${
+        data-trash="true" className={`mx-2 mb-3 sm:mx-6 sm:mb-6 rounded-2xl border-2 border-dashed flex items-center justify-center gap-3 py-5 transition-all duration-200 ${
           dragging
             ? dragOverTrash
               ? "border-red-400 dark:border-red-500 bg-red-50 dark:bg-red-950/40 text-red-500 dark:text-red-400 scale-[1.01] shadow-lg"
