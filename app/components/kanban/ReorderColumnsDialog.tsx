@@ -14,8 +14,11 @@ export function ReorderColumnsDialog({
   onClose: () => void;
 }) {
   const [items, setItems] = useState<Column[]>(columns);
-  const dragIdx = useRef<number | null>(null);
-  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<{ id: string; fromIdx: number; offsetY: number } | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -23,32 +26,91 @@ export function ReorderColumnsDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function getDisplayItems() {
-    if (dragIdx.current === null || overIdx === null || dragIdx.current === overIdx) return items;
-    const next = [...items];
-    const [removed] = next.splice(dragIdx.current, 1);
-    next.splice(overIdx, 0, removed);
-    return next;
-  }
-
-  function handleDragStart(i: number) {
-    dragIdx.current = i;
-    setOverIdx(i);
-  }
-
-  function handleDragOver(e: React.DragEvent, i: number) {
-    e.preventDefault();
-    if (dragIdx.current === null) return;
-    setOverIdx(i);
-  }
-
-  function handleDragEnd() {
-    if (dragIdx.current !== null && overIdx !== null && dragIdx.current !== overIdx) {
-      setItems(getDisplayItems());
+  function getTargetId(clientY: number): string | null {
+    if (!listRef.current) return null;
+    const children = Array.from(listRef.current.querySelectorAll<HTMLElement>("[data-col-id]"));
+    for (const el of children) {
+      const rect = el.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) return el.dataset.colId ?? null;
     }
-    dragIdx.current = null;
-    setOverIdx(null);
+    // past the last item
+    if (children.length > 0) {
+      const last = children[children.length - 1].getBoundingClientRect();
+      if (clientY > last.bottom) return children[children.length - 1].dataset.colId ?? null;
+      const first = children[0].getBoundingClientRect();
+      if (clientY < first.top) return children[0].dataset.colId ?? null;
+    }
+    return null;
   }
+
+  function startDrag(e: React.MouseEvent | React.TouchEvent, col: Column, idx: number) {
+    e.preventDefault();
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+
+    const ghost = el.cloneNode(true) as HTMLElement;
+    Object.assign(ghost.style, {
+      position: "fixed",
+      top: rect.top + "px",
+      left: rect.left + "px",
+      width: rect.width + "px",
+      opacity: "0.85",
+      zIndex: "9999",
+      pointerEvents: "none",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+      borderRadius: "12px",
+      transition: "none",
+      transform: "scale(1.02)",
+    });
+    document.body.appendChild(ghost);
+    ghostRef.current = ghost;
+    dragRef.current = { id: col.id, fromIdx: idx, offsetY: clientY - rect.top };
+    setDraggingId(col.id);
+    setOverId(col.id);
+  }
+
+  useEffect(() => {
+    function onMove(e: MouseEvent | TouchEvent) {
+      if (!dragRef.current || !ghostRef.current) return;
+      const clientY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      const ghost = ghostRef.current;
+      ghost.style.top = (clientY - dragRef.current.offsetY) + "px";
+      const targetId = getTargetId(clientY);
+      if (targetId) setOverId(targetId);
+    }
+
+    function onUp(e: MouseEvent | TouchEvent) {
+      if (!dragRef.current) return;
+      const clientY = "touches" in e ? (e as TouchEvent).changedTouches[0].clientY : (e as MouseEvent).clientY;
+      const targetId = getTargetId(clientY) ?? dragRef.current.id;
+      if (targetId !== dragRef.current.id) {
+        const fromIdx = dragRef.current.fromIdx;
+        const toIdx = items.findIndex((c) => c.id === targetId);
+        if (toIdx !== -1) setItems((prev) => {
+          const next = [...prev];
+          const [removed] = next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, removed);
+          return next;
+        });
+      }
+      if (ghostRef.current) { document.body.removeChild(ghostRef.current); ghostRef.current = null; }
+      dragRef.current = null;
+      setDraggingId(null);
+      setOverId(null);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, [items]);
 
   return (
     <div
@@ -68,21 +130,20 @@ export function ReorderColumnsDialog({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-3 space-y-2">
-          {getDisplayItems().map((col, i) => {
-            const isDragging = overIdx !== null && dragIdx.current !== null && col.id === items[dragIdx.current]?.id;
-            return (
+        <div ref={listRef} className="flex-1 overflow-y-auto no-scrollbar px-5 py-3 space-y-2">
+          {items.map((col, i) => (
             <div
               key={col.id}
-              draggable
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDragEnd={handleDragEnd}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-grab active:cursor-grabbing transition-all duration-150 select-none ${
-                isDragging
-                  ? "opacity-50 bg-[#ECEADA] dark:bg-[#313131] border-[#F76F53] dark:border-[#F76F53] scale-[0.98]"
-                  : "bg-[#ECEADA] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#F76F53]/40 dark:hover:border-[#F76F53]/30"
+              data-col-id={col.id}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all duration-150 select-none cursor-grab active:cursor-grabbing touch-none ${
+                col.id === draggingId
+                  ? "opacity-30 bg-[#ECEADA] dark:bg-[#313131] border-[#F76F53] dark:border-[#F76F53]"
+                  : col.id === overId && draggingId
+                  ? "bg-[#ECEADA] dark:bg-[#313131] border-[#F76F53]/60 dark:border-[#F76F53]/50 scale-[1.01]"
+                  : "bg-[#ECEADA] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a]"
               }`}
+              onMouseDown={(e) => startDrag(e, col, i)}
+              onTouchStart={(e) => startDrag(e, col, i)}
             >
               <span className="text-[#BCB8A8] dark:text-[#4a4641]">
                 <GripIcon size={14} />
@@ -90,8 +151,7 @@ export function ReorderColumnsDialog({
               <span className="text-sm font-medium text-[#3D3A30] dark:text-[#ccc8c0] flex-1">{col.title}</span>
               <span className="text-xs text-[#9C9888] dark:text-[#5e5a55] tabular-nums">{col.tasks.length} tasks</span>
             </div>
-          );
-          })}
+          ))}
         </div>
 
         <div className="flex gap-2 px-5 py-4 border-t border-[#E8E5D5] dark:border-[#313131]">
