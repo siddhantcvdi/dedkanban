@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, MouseEvent } from "react";
 import { User } from "firebase/auth";
 import { Board, ThemeMode, TODAY_BOARD_ID } from "./types";
 import { useClickOutside } from "./hooks";
@@ -43,6 +43,19 @@ export function KanbanHeader({
 
   const newBoardInputRef = useRef<HTMLDivElement>(null);
   const boardCtxRef = useRef<HTMLDivElement>(null);
+  const themeToggleRef = useRef<HTMLButtonElement>(null);
+
+  function handleThemeToggle(e: MouseEvent<HTMLButtonElement>) {
+    const btn = e.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    const root = document.documentElement;
+    root.style.setProperty("--theme-clip-from", `circle(0% at ${x}px ${y}px)`);
+    root.style.setProperty("--theme-clip-to", `circle(150% at ${x}px ${y}px)`);
+    if (!document.startViewTransition) { onThemeToggle(); return; }
+    document.startViewTransition(() => { onThemeToggle(); });
+  }
 
   useClickOutside(newBoardInputRef, useCallback(() => { setAddingBoard(false); setAddingBoardName(""); }, []));
   useClickOutside(boardCtxRef, useCallback(() => setBoardCtxMenu(null), []));
@@ -194,7 +207,8 @@ export function KanbanHeader({
             </div>
           )}
           <button
-            onClick={onThemeToggle}
+            ref={themeToggleRef}
+            onClick={handleThemeToggle}
             className="flex items-center px-2 py-1.5 rounded-lg text-[#9C9888] dark:text-[#5e5a55] hover:bg-[#F2F0E3] dark:hover:bg-[#313131] hover:text-[#5C5849] dark:hover:text-[#a09890] transition-colors"
             title={`Theme: ${themeMode}`}
           >
