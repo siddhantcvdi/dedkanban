@@ -318,6 +318,7 @@ function TaskCard({
   onDragStart,
   onDragEnd,
   isDragging,
+  isHolding,
   onTouchStart,
   onTouchMove,
   onTouchEnd,
@@ -331,6 +332,7 @@ function TaskCard({
   onDragStart: () => void;
   onDragEnd: () => void;
   isDragging: boolean;
+  isHolding: boolean;
   onTouchStart: (e: React.TouchEvent) => void;
   onTouchMove: (e: React.TouchEvent) => void;
   onTouchEnd: (e: React.TouchEvent) => void;
@@ -359,6 +361,8 @@ function TaskCard({
         className={`group p-3 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
           isDragging
             ? "opacity-40 scale-95 bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a]"
+            : isHolding
+            ? "bg-[#F2F0E3] dark:bg-[#313131] border-[#F76F53] dark:border-[#F76F53] scale-[1.02] shadow-lg shadow-[#F76F53]/20 ring-2 ring-[#F76F53]/30"
             : "bg-[#F2F0E3] dark:bg-[#313131] border-[#DDD9C8] dark:border-[#3a3a3a] hover:border-[#f59a87] dark:hover:border-[#F76F53]/50 hover:shadow-md hover:shadow-[#D8D5C4]/50 dark:hover:shadow-[#1f1f1f]/50"
         }`}
       >
@@ -425,7 +429,8 @@ export default function KanbanBoard() {
   const [dragOverTrash, setDragOverTrash] = useState(false);
 
   // Touch DnD
-  const touchRef = useRef<{ taskId: string; colId: string; ghost: HTMLElement | null; startX: number; startY: number; active: boolean } | null>(null);
+  const [holdingCardId, setHoldingCardId] = useState<string | null>(null);
+  const touchRef = useRef<{ taskId: string; colId: string; ghost: HTMLElement | null; startX: number; startY: number; active: boolean; holdReady: boolean; holdTimer: ReturnType<typeof setTimeout> | null } | null>(null);
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
@@ -514,11 +519,15 @@ export default function KanbanBoard() {
     }, 800);
   }, [boards, activeBoardId, mounted, uid]);
 
-  // Apply dark class based on theme mode
+  // Apply dark class and update theme-color meta based on theme mode
   useEffect(() => {
     if (!mounted) return;
     localStorage.setItem(THEME_KEY, themeMode);
     document.documentElement.classList.toggle("dark", themeMode === "dark");
+    const color = themeMode === "dark" ? "#282828" : "#E6E4D7";
+    document.querySelectorAll("meta[name='theme-color']").forEach((el) => {
+      (el as HTMLMetaElement).content = color;
+    });
   }, [themeMode, mounted]);
 
   // ---- Helpers ----
@@ -576,15 +585,33 @@ export default function KanbanBoard() {
   // ---- Touch DnD ----
   function onCardTouchStart(e: React.TouchEvent, taskId: string, colId: string) {
     const t = e.touches[0];
-    touchRef.current = { taskId, colId, ghost: null, startX: t.clientX, startY: t.clientY, active: false };
+    const holdTimer = setTimeout(() => {
+      if (touchRef.current && !touchRef.current.active) {
+        touchRef.current.holdReady = true;
+        setHoldingCardId(taskId);
+        navigator.vibrate?.(15);
+      }
+    }, 350);
+    touchRef.current = { taskId, colId, ghost: null, startX: t.clientX, startY: t.clientY, active: false, holdReady: false, holdTimer };
   }
 
   function onCardTouchMove(e: React.TouchEvent) {
     const s = touchRef.current;
     if (!s) return;
     const t = e.touches[0];
+
+    if (!s.holdReady) {
+      // Cancel hold if finger moved before the timer fired
+      if (Math.hypot(t.clientX - s.startX, t.clientY - s.startY) > 8) {
+        if (s.holdTimer) clearTimeout(s.holdTimer);
+        touchRef.current = null;
+        setHoldingCardId(null);
+      }
+      return;
+    }
+
     if (!s.active) {
-      if (Math.hypot(t.clientX - s.startX, t.clientY - s.startY) < 6) return;
+      if (Math.hypot(t.clientX - s.startX, t.clientY - s.startY) < 4) return;
       const el = e.currentTarget as HTMLElement;
       const rect = el.getBoundingClientRect();
       const ghost = el.cloneNode(true) as HTMLElement;
@@ -592,6 +619,7 @@ export default function KanbanBoard() {
       document.body.appendChild(ghost);
       s.ghost = ghost;
       s.active = true;
+      setHoldingCardId(null);
       setDragging({ taskId: s.taskId, colId: s.colId });
     }
     if (s.active && s.ghost) {
@@ -633,6 +661,8 @@ export default function KanbanBoard() {
     if (scrollAnimRef.current) { cancelAnimationFrame(scrollAnimRef.current); scrollAnimRef.current = null; }
     const s = touchRef.current;
     if (!s) return;
+    if (s.holdTimer) clearTimeout(s.holdTimer);
+    setHoldingCardId(null);
     if (s.active) {
       const t = e.changedTouches[0];
       if (s.ghost) s.ghost.style.display = "none";
@@ -816,7 +846,7 @@ export default function KanbanBoard() {
           {boards.map((b) => (
             <div
               key={b.id}
-              className={`group flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 cursor-pointer transition-all duration-150 ${
+              className={`group flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-medium whitespace-nowrap flex-shrink-0 cursor-pointer select-none transition-all duration-150 ${
                 b.id === activeBoardId
                   ? "bg-[#F2F0E3] dark:bg-[#313131] text-[#1E1C16] dark:text-white shadow-sm"
                   : "text-[#7C7868] dark:text-[#7d7870] hover:bg-[#ECEADA] dark:hover:bg-[#313131]/60 hover:text-[#3D3A30] dark:hover:text-[#ccc8c0]"
@@ -990,6 +1020,7 @@ export default function KanbanBoard() {
                       onDragStart={() => onTaskDragStart(task.id, col.id)}
                       onDragEnd={onTaskDragEnd}
                       isDragging={dragging?.taskId === task.id}
+                      isHolding={holdingCardId === task.id}
                       onTouchStart={(e) => onCardTouchStart(e, task.id, col.id)}
                       onTouchMove={onCardTouchMove}
                       onTouchEnd={onCardTouchEnd}

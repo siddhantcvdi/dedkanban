@@ -9,7 +9,10 @@ const geistSans = Geist({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#F76F53",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#E6E4D7" },
+    { media: "(prefers-color-scheme: dark)", color: "#282828" },
+  ],
   width: "device-width",
   initialScale: 1,
 };
