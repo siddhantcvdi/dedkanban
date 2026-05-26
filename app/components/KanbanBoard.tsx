@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, User } from "firebase/auth";
+import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
 
 // ---- Types ----
 type TaskLink = { id: string; url: string; label: string };
@@ -9,8 +12,7 @@ type Column = { id: string; title: string; tasks: Task[] };
 type Board = { id: string; name: string; columns: Column[] };
 type ThemeMode = "light" | "dark";
 
-// ---- Storage keys ----
-const BOARDS_KEY = "kanban-boards";
+// ---- Storage keys (theme + active board remain local) ----
 const ACTIVE_BOARD_KEY = "kanban-active-board";
 const THEME_KEY = "kanban-theme";
 
@@ -203,7 +205,7 @@ function TaskModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-4 space-y-5">
           {/* Content */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[#7C7868] dark:text-[#7d7870] uppercase tracking-wide">Content</label>
@@ -411,6 +413,11 @@ export default function KanbanBoard() {
   const [activeBoardId, setActiveBoardId] = useState<string>("");
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const [mounted, setMounted] = useState(false);
+  const [uid, setUid] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Drag state
   const [dragging, setDragging] = useState<{ taskId: string; colId: string } | null>(null);
@@ -454,30 +461,70 @@ export default function KanbanBoard() {
   useClickOutside(boardCtxRef, useCallback(() => setBoardCtxMenu(null), []));
   useClickOutside(linkPopoverRef, useCallback(() => { setLinkPopoverOpen(false); setNewLinkUrl(""); setNewLinkLabel(""); }, []));
 
-  // Load from localStorage
+  // Auth + load boards from Firestore
   useEffect(() => {
-    const savedBoards = localStorage.getItem(BOARDS_KEY);
-    const savedActive = localStorage.getItem(ACTIVE_BOARD_KEY);
     const savedTheme = localStorage.getItem(THEME_KEY) as ThemeMode | null;
-
-    const loadedBoards: Board[] = savedBoards ? JSON.parse(savedBoards) : DEFAULT_BOARDS;
-    const activeId = savedActive && loadedBoards.find((b) => b.id === savedActive)
-      ? savedActive
-      : loadedBoards[0].id;
-
-    setBoards(loadedBoards);
-    setActiveBoardId(activeId);
     setThemeMode((savedTheme === "light" || savedTheme === "dark") ? savedTheme : "light");
-    setMounted(true);
+
+    // Handle redirect result from Google sign-in
+    getRedirectResult(auth).then(async (result) => {
+      if (!result) return;
+      const newUid = result.user.uid;
+      const userDoc = doc(db, "users", newUid);
+      const snap = await getDoc(userDoc);
+      if (!snap.exists()) {
+        const currentBoards = boards.length > 0 ? boards : DEFAULT_BOARDS;
+        await setDoc(userDoc, { boards: currentBoards });
+      }
+    }).catch(() => {});
+
+    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        const authedUser = firebaseUser ?? (await signInAnonymously(auth)).user;
+        setUid(authedUser.uid);
+        setUser(authedUser);
+
+        const userDoc = doc(db, "users", authedUser.uid);
+        const snap = await getDoc(userDoc);
+        const savedActive = localStorage.getItem(ACTIVE_BOARD_KEY);
+
+        if (snap.exists()) {
+          const loadedBoards: Board[] = snap.data().boards ?? DEFAULT_BOARDS;
+          const activeId = savedActive && loadedBoards.find((b) => b.id === savedActive)
+            ? savedActive : loadedBoards[0].id;
+          setBoards(loadedBoards);
+          setActiveBoardId(activeId);
+        } else {
+          const activeId = DEFAULT_BOARDS[0].id;
+          setBoards(DEFAULT_BOARDS);
+          setActiveBoardId(activeId);
+          await setDoc(userDoc, { boards: DEFAULT_BOARDS });
+        }
+      } catch {
+        // Auth or Firestore unavailable — run offline with defaults
+        const savedActive = localStorage.getItem(ACTIVE_BOARD_KEY);
+        const activeId = savedActive ?? DEFAULT_BOARDS[0].id;
+        setBoards(DEFAULT_BOARDS);
+        setActiveBoardId(activeId);
+      } finally {
+        setMounted(true);
+      }
+    });
+
+    return () => unsubAuth();
   }, []);
 
-  // Persist boards
+  // Debounced Firestore write whenever boards change
   useEffect(() => {
-    if (mounted) {
-      localStorage.setItem(BOARDS_KEY, JSON.stringify(boards));
-      localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId);
-    }
-  }, [boards, activeBoardId, mounted]);
+    if (!mounted || !uid) return;
+    localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId);
+    if (writeTimer.current) clearTimeout(writeTimer.current);
+    writeTimer.current = setTimeout(async () => {
+      setSyncing(true);
+      await setDoc(doc(db, "users", uid), { boards });
+      setSyncing(false);
+    }, 800);
+  }, [boards, activeBoardId, mounted, uid]);
 
   // Apply dark class based on theme mode
   useEffect(() => {
@@ -697,6 +744,17 @@ export default function KanbanBoard() {
     setRenamingBoardName("");
   }
 
+  async function handleGoogleSignIn() {
+    setSigningIn(true);
+    const provider = new GoogleAuthProvider();
+    await signInWithRedirect(auth, provider);
+    // page will redirect to Google and come back — no code runs after this
+  }
+
+  async function handleSignOut() {
+    await signOut(auth);
+  }
+
   if (!mounted) {
     return <div className="min-h-screen bg-[#F2F0E3] dark:bg-[#1f1f1f]" />;
   }
@@ -789,8 +847,56 @@ export default function KanbanBoard() {
           )}
         </div>
 
-        {/* Theme toggle */}
-        <div className="flex-shrink-0 pr-3">
+        {/* Sync indicator + auth + theme toggle */}
+        <div className="flex items-center gap-1 flex-shrink-0 pr-3">
+          {syncing && (
+            <svg className="animate-spin text-[#9C9888] dark:text-[#5e5a55]" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+          )}
+
+          {/* Auth */}
+          {user?.isAnonymous ? (
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={signingIn}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#F2F0E3] dark:bg-[#313131] hover:bg-[#ffddd6] dark:hover:bg-[#F76F53]/12 text-[#5C5849] dark:text-[#a09890] hover:text-[#F76F53] dark:hover:text-[#f99080] border border-[#DDD9C8] dark:border-[#3a3a3a] transition-colors disabled:opacity-50"
+              title="Sign in to sync across devices"
+            >
+              {signingIn ? (
+                <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+              )}
+              <span className="hidden sm:inline">{signingIn ? "Signing in…" : "Sign in"}</span>
+            </button>
+          ) : user && !user.isAnonymous ? (
+            <div className="flex items-center gap-1.5">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName ?? ""} className="w-6 h-6 rounded-full border border-[#DDD9C8] dark:border-[#3a3a3a]" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-[#F76F53] flex items-center justify-center text-white text-[10px] font-bold">
+                  {user.displayName?.[0]?.toUpperCase() ?? "?"}
+                </div>
+              )}
+              <span className="hidden sm:inline text-xs text-[#7C7868] dark:text-[#7d7870] max-w-[80px] truncate">{user.displayName}</span>
+              <button
+                onClick={handleSignOut}
+                className="px-2 py-1 rounded-lg text-xs text-[#9C9888] dark:text-[#5e5a55] hover:text-red-400 dark:hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                title="Sign out"
+              >
+                Out
+              </button>
+            </div>
+          ) : null}
+
           <button
             onClick={() => setThemeMode((m) => m === "light" ? "dark" : "light")}
             className="flex items-center px-2 py-1.5 rounded-lg text-[#9C9888] dark:text-[#5e5a55] hover:bg-[#F2F0E3] dark:hover:bg-[#313131] hover:text-[#5C5849] dark:hover:text-[#a09890] transition-colors"
@@ -803,7 +909,7 @@ export default function KanbanBoard() {
       </div>
 
       {/* Board */}
-      <div ref={boardScrollRef} className="flex-1 overflow-x-auto">
+      <div ref={boardScrollRef} className="flex-1 overflow-x-auto no-scrollbar">
         <div className="flex gap-3 px-2 pt-3 pb-6 sm:gap-4 sm:px-4 sm:pt-4 items-start min-w-max">
           {columns.map((col) => {
             const isDone = col.title.trim().toLowerCase() === "done";
