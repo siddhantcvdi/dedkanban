@@ -80,15 +80,7 @@ export default function KanbanBoard() {
 
   function onColumnDrop(targetColId: string) {
     if (!dragging || dragging.colId === targetColId) { setDragging(null); setDragOverColId(null); return; }
-    updateColumns((cols) => {
-      const task = cols.find((c) => c.id === dragging.colId)?.tasks.find((t) => t.id === dragging.taskId);
-      if (!task) return cols;
-      return cols.map((col) => {
-        if (col.id === dragging.colId) return { ...col, tasks: col.tasks.filter((t) => t.id !== dragging.taskId) };
-        if (col.id === targetColId) return { ...col, tasks: [...col.tasks, task] };
-        return col;
-      });
-    });
+    moveTask(dragging.taskId, dragging.colId, targetColId);
     setDragging(null);
     setDragOverColId(null);
   }
@@ -215,15 +207,39 @@ export default function KanbanBoard() {
   }
 
   function moveTask(taskId: string, fromColId: string, toColId: string) {
+    const task = columns.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
+    const targetColTitle = columns.find((c) => c.id === toColId)?.title;
+
     updateColumns((cols) => {
-      const task = cols.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
-      if (!task) return cols;
+      const t = cols.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
+      if (!t) return cols;
       return cols.map((col) => {
         if (col.id === fromColId) return { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) };
-        if (col.id === toColId) return { ...col, tasks: [...col.tasks, task] };
+        if (col.id === toColId) return { ...col, tasks: [...col.tasks, t] };
         return col;
       });
     });
+
+    // When moving in Today, mirror the move in the source board if a matching column exists
+    if (isToday && task?.sourceBoardId && task?.sourceTaskId && targetColTitle) {
+      const { sourceBoardId, sourceTaskId } = task;
+      setBoards((prev) => prev.map((board) => {
+        if (board.id !== sourceBoardId) return board;
+        const sourceColId = board.columns.find((c) => c.tasks.some((t) => t.id === sourceTaskId))?.id;
+        const targetCol = board.columns.find((c) => c.title.trim().toLowerCase() === targetColTitle.trim().toLowerCase());
+        if (!sourceColId || !targetCol || sourceColId === targetCol.id) return board;
+        const sourceTask = board.columns.find((c) => c.id === sourceColId)?.tasks.find((t) => t.id === sourceTaskId);
+        if (!sourceTask) return board;
+        return {
+          ...board,
+          columns: board.columns.map((col) => {
+            if (col.id === sourceColId) return { ...col, tasks: col.tasks.filter((t) => t.id !== sourceTaskId) };
+            if (col.id === targetCol.id) return { ...col, tasks: [...col.tasks, sourceTask] };
+            return col;
+          }),
+        };
+      }));
+    }
   }
 
   function updateTask(colId: string, updated: Task) {
@@ -234,7 +250,13 @@ export default function KanbanBoard() {
 
   // ---- Board actions ----
   function addBoard(name: string) {
-    const newBoard = { id: genId(), name, columns: [] };
+    const newBoard = {
+      id: genId(), name, columns: [
+        { id: genId(), title: "To Do", tasks: [] },
+        { id: genId(), title: "In Progress", tasks: [] },
+        { id: genId(), title: "Done", tasks: [] },
+      ],
+    };
     setBoards((prev) => [...prev, newBoard]);
     setActiveBoardId(newBoard.id);
   }
@@ -257,7 +279,7 @@ export default function KanbanBoard() {
     if (!sourceBoard) return;
     const task = sourceBoard.columns.find((c) => c.id === fromColId)?.tasks.find((t) => t.id === taskId);
     if (!task) return;
-    const taskCopy: Task = { ...task, id: genId(), sourceBoardName: sourceBoard.name };
+    const taskCopy: Task = { ...task, id: genId(), sourceBoardName: sourceBoard.name, sourceBoardId: sourceBoard.id, sourceTaskId: task.id };
     setBoards((prev) =>
       prev.map((board) =>
         board.id === TODAY_BOARD_ID

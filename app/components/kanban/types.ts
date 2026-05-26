@@ -1,5 +1,5 @@
 export type TaskLink = { id: string; url: string; label: string };
-export type Task = { id: string; content: string; links: TaskLink[]; sourceBoardName?: string };
+export type Task = { id: string; content: string; links: TaskLink[]; sourceBoardName?: string; sourceBoardId?: string; sourceTaskId?: string };
 export type Column = { id: string; title: string; tasks: Task[] };
 export type Board = { id: string; name: string; columns: Column[] };
 export type ThemeMode = "light" | "dark";
