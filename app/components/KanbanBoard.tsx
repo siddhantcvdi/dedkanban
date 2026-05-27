@@ -70,6 +70,11 @@ export default function KanbanBoard() {
   latestRef.current.clearDragState = clearDragState;
 
   useEffect(() => {
+    function onTouchMoveDoc(e: TouchEvent) {
+      if (touchRef.current?.active) e.preventDefault();
+    }
+    window.addEventListener("touchmove", onTouchMoveDoc, { passive: false });
+
     function onMove(e: MouseEvent) {
       const s = mouseRef.current;
       if (!s) return;
@@ -154,7 +159,11 @@ export default function KanbanBoard() {
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    return () => {
+      window.removeEventListener("touchmove", onTouchMoveDoc);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Helpers ----
@@ -307,6 +316,17 @@ export default function KanbanBoard() {
         else clearDragState();
       }
     }
+    clearDragState();
+    touchRef.current = null;
+  }
+
+  function onCardTouchCancel() {
+    if (scrollAnimRef.current) { cancelAnimationFrame(scrollAnimRef.current); scrollAnimRef.current = null; }
+    const s = touchRef.current;
+    if (!s) return;
+    if (s.holdTimer) clearTimeout(s.holdTimer);
+    if (s.ghost && document.body.contains(s.ghost)) document.body.removeChild(s.ghost);
+    setHoldingCardId(null);
     clearDragState();
     touchRef.current = null;
   }
@@ -485,6 +505,7 @@ export default function KanbanBoard() {
               onCardTouchStart={(e, taskId) => onCardTouchStart(e, taskId, col.id)}
               onCardTouchMove={onCardTouchMove}
               onCardTouchEnd={onCardTouchEnd}
+              onCardTouchCancel={onCardTouchCancel}
               onCardContextMenu={!isToday ? (taskId, x, y) => setCardCtxMenu({ taskId, colId: col.id, x, y }) : undefined}
               onCardMenuButton={!isToday ? (taskId, x, y) => setCardCtxMenu({ taskId, colId: col.id, x, y }) : undefined}
             />

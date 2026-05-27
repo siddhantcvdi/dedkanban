@@ -15,6 +15,7 @@ export function TaskCard({
   onTouchStart,
   onTouchMove,
   onTouchEnd,
+  onTouchCancel,
   columns,
   currentColId,
   onMove,
@@ -30,6 +31,7 @@ export function TaskCard({
   onTouchStart: (e: React.TouchEvent) => void;
   onTouchMove: (e: React.TouchEvent) => void;
   onTouchEnd: (e: React.TouchEvent) => void;
+  onTouchCancel: () => void;
   columns: Column[];
   currentColId: string;
   onMove: (targetColId: string) => void;
@@ -51,6 +53,7 @@ export function TaskCard({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchCancel}
         onClick={() => setModalOpen(true)}
         onContextMenu={onContextMenu}
         style={{ touchAction: isDragging || isHolding ? "none" : "pan-x pan-y" }}

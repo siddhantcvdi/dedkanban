@@ -4,6 +4,11 @@
 
 body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background-color: #F2F0E3;
+}
+
+.dark body {
+  background-color: #1f1f1f;
 }
 
 .no-scrollbar::-webkit-scrollbar {

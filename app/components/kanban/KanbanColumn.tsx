@@ -24,6 +24,7 @@ export function KanbanColumn({
   onCardTouchStart,
   onCardTouchMove,
   onCardTouchEnd,
+  onCardTouchCancel,
   onCardContextMenu,
   onCardMenuButton,
 }: {
@@ -44,6 +45,7 @@ export function KanbanColumn({
   onCardTouchStart: (e: React.TouchEvent, taskId: string) => void;
   onCardTouchMove: (e: React.TouchEvent) => void;
   onCardTouchEnd: (e: React.TouchEvent) => void;
+  onCardTouchCancel: () => void;
   onCardContextMenu?: (taskId: string, x: number, y: number) => void;
   onCardMenuButton?: (taskId: string, x: number, y: number) => void;
 }) {
@@ -155,6 +157,7 @@ export function KanbanColumn({
                 onTouchStart={(e) => onCardTouchStart(e, task.id)}
                 onTouchMove={onCardTouchMove}
                 onTouchEnd={onCardTouchEnd}
+                onTouchCancel={onCardTouchCancel}
                 columns={columns}
                 currentColId={col.id}
                 onMove={(targetColId) => onMoveTask(task.id, targetColId)}
