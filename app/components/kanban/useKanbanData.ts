@@ -19,6 +19,7 @@ export function useKanbanData() {
   const [signingIn, setSigningIn] = useState(false);
   const [boardsLoaded, setBoardsLoaded] = useState(false);
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedFromServer = useRef(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_KEY) as ThemeMode | null;
@@ -26,6 +27,7 @@ export function useKanbanData() {
 
     const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
+        loadedFromServer.current = false;
         setUser(null);
         setUid(null);
         setBoardsLoaded(true);
@@ -52,17 +54,20 @@ export function useKanbanData() {
             );
           const activeId = savedActive && finalBoards.find((b) => b.id === savedActive)
             ? savedActive : finalBoards[0].id;
+          loadedFromServer.current = true;
           setBoards(finalBoards);
           setActiveBoardId(activeId);
         } else {
+          await setDoc(userDoc, { boards: DEFAULT_BOARDS });
+          loadedFromServer.current = true;
           setBoards(DEFAULT_BOARDS);
           setActiveBoardId(DEFAULT_BOARDS[0].id);
-          await setDoc(userDoc, { boards: DEFAULT_BOARDS });
         }
       } catch (err) {
         console.error("[kanban] Firestore error", err);
         setBoards(DEFAULT_BOARDS);
         setActiveBoardId(DEFAULT_BOARDS[0].id);
+        // loadedFromServer stays false — sync effect must not write on load failure
       }
       setBoardsLoaded(true);
     });
@@ -71,7 +76,7 @@ export function useKanbanData() {
   }, []);
 
   useEffect(() => {
-    if (!mounted || !uid || !boardsLoaded) return;
+    if (!mounted || !uid || !boardsLoaded || !loadedFromServer.current) return;
     localStorage.setItem(ACTIVE_BOARD_KEY, activeBoardId);
     if (writeTimer.current) clearTimeout(writeTimer.current);
     writeTimer.current = setTimeout(async () => {
